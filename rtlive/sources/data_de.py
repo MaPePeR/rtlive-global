@@ -303,7 +303,58 @@ def forecast_DE(df: pandas.DataFrame):
     """
     # forecast with existing data
     df['predicted_new_tests'], results = preprocessing.predict_testcounts_all_regions(df, 'DE')
+    
+    corrected_prediction = scale_forecast_by_total_tests_reported(
+        df.loc['all']['new_tests'],
+        df.loc['all']['total_tests_reported'],
+        df.loc['all']['predicted_new_tests'])
+    
+    df.loc['all', 'predicted_new_tests'] = corrected_prediction
     return df, results
+
+def scale_forecast_by_total_tests_reported(daily_data: pandas.Series, total_tests_reported: pandas.Series, predicted_daily_data: pandas.Series):
+    """ Scale the predicted daily test counts in a way, that the amount of tests done is equal to a different source of total test counts that
+    are reported from a different source and available before the real daily testcounts are known.
+    
+    Parameters
+    ----------
+    daily_data : pandas.Series
+        The known daily test counts. This will be used to determine at which point the predicted data starts.
+    total_tests_reported : pandas.Series
+        Series containing test count totals. Is expected to contain NaN gaps in the data. The Differences between
+        two reports will be used to make sure the total number of tests in the prediction matches this data.
+    predicted_daily_data: pandas.Series
+        The predicted data that will be scaled so the number of tests between two reports matches total_tests_reported.
+
+    Returns
+    -------
+    corrected_prediction: pandas.Series
+        The scaled prediction
+    """
+    day = pandas.Timedelta('1D')
+    
+    first_unknown_daily_data = max(daily_data[~daily_data.isna()].index) + day
+    
+    report_data = total_tests_reported[~total_tests_reported.isna()].diff()
+    
+    #find the start date of the week report that contaisn this date:
+    report_index = report_data.index.get_loc(first_unknown_daily_data,method="ffill")
+    
+    #We assume, that the report for a day includes the data for the day itself.
+    first_report_date = report_data.index[report_index] + day
+    
+    corrected_prediction = predicted_daily_data.copy()
+
+    for last_report_date, reportsum in report_data[first_report_date:].items():
+        if numpy.isnan(reportsum):
+            break
+        if first_unknown_daily_data > first_report_date:
+            # We have daily data for parts of this report. Subtract the known days from the report sum and only scale the unknown data
+            reportsum -= daily_data[first_report_date:first_unknown_daily_data - day] 
+            first_report_date = first_unknown_daily_data
+        corrected_prediction[first_report_date:last_report_date] *= reportsum/predicted_daily_data[first_report_date:last_report_date].sum()
+        first_report_date = last_report_date + day
+    return corrected_prediction
 
 
 def download_rki_nowcast(run_date, target_filename) -> pathlib.Path:
