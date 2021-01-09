@@ -34,6 +34,7 @@ import typing
 
 from .. import preprocessing
 
+from . import ourworldindata
 
 _log = logging.getLogger(__file__)
 
@@ -278,7 +279,20 @@ def get_testcounts_DE(run_date, take_latest:bool=True) -> pandas.DataFrame:
 
     # drop non-associated AFTER calculating the sum
     df_merged.drop(index='nicht zugeordnet', inplace=True)
+    
+    # Get the OWID total tests reported
+    df_total_tests_reported = get_testcounts_DE_total_tests_reported(run_date)
+    df_merged = df_merged.assign(total_tests_reported=df_total_tests_reported)
     return df_merged
+
+def get_testcounts_DE_total_tests_reported(run_date):
+    """ Get the total amount of tests reported to OWID.
+    
+    At the moment only the `all` region is included. At time of writing only sundays have a value that is not NaN.
+    """
+    f = ourworldindata.create_loader_function("DE")
+    data = f(run_date)
+    return data.total_tests.rename("total_tests_reported").to_frame()
 
 
 def forecast_DE(df: pandas.DataFrame):
