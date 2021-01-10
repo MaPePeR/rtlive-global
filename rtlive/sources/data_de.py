@@ -350,7 +350,7 @@ def scale_forecast_by_total_tests_reported(daily_data: pandas.Series, total_test
             break
         if first_unknown_daily_data > first_report_date:
             # We have daily data for parts of this report. Subtract the known days from the report sum and only scale the unknown data
-            reportsum -= daily_data[first_report_date:first_unknown_daily_data - day] 
+            reportsum -= daily_data[first_report_date:first_unknown_daily_data - day].sum()
             first_report_date = first_unknown_daily_data
         corrected_prediction[first_report_date:last_report_date] *= reportsum/predicted_daily_data[first_report_date:last_report_date].sum()
         first_report_date = last_report_date + day
