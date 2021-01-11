@@ -304,12 +304,15 @@ def forecast_DE(df: pandas.DataFrame):
     # forecast with existing data
     df['predicted_new_tests'], results = preprocessing.predict_testcounts_all_regions(df, 'DE')
     
-    corrected_prediction = scale_forecast_by_total_tests_reported(
-        df.loc['all']['new_tests'],
-        df.loc['all']['total_tests_reported'],
-        df.loc['all']['predicted_new_tests'])
+    region_test_percentages = estimate_test_percentages_for_regions(df)
     
-    df.loc['all', 'predicted_new_tests'] = corrected_prediction
+    for region in df.index.levels[0]:
+        corrected_prediction = scale_forecast_by_total_tests_reported(
+            df.loc[region, 'new_tests'],
+            df.loc['all', 'total_tests_reported'] * region_test_percentages[region],
+            df.loc[region, 'predicted_new_tests'])
+    
+        df.loc[region, 'predicted_new_tests'] = corrected_prediction.values
     return df, results
 
 def scale_forecast_by_total_tests_reported(daily_data: pandas.Series, total_tests_reported: pandas.Series, predicted_daily_data: pandas.Series):
@@ -356,6 +359,25 @@ def scale_forecast_by_total_tests_reported(daily_data: pandas.Series, total_test
         first_report_date = last_report_date + day
     return corrected_prediction
 
+def estimate_test_percentages_for_regions(df: pandas.DataFrame):
+    """ Estimate the distribution of tests across the regions in the DataFrame. Uses the last week for which daily new_test data is available for all regions.
+    
+    Parameters
+    ----------
+    df: pandas.DataFrame
+        The dataframe containing the new_test column with a [region, date] index as genereated by get_testcounts_DE. An `all` region has to be included.
+        
+    Returns
+    -------
+    region_test_percentages: pandas.DataFrame
+        Dataframe with region-index and percentage values between 0 and 1 for each region.
+    """
+    # Find the last date for each region for which we have data and get the first date of those. So the last date for which he have date for all regions.
+    last_date_with_data_for_all_regions = df.new_tests[~df.new_tests.isna()].groupby('region').tail(1).reset_index()['date'].min()
+    # Then calculate the sum of tests one week up to that date
+    testcounts_in_last_daily_data = df.new_tests.xs(slice(last_date_with_data_for_all_regions - pandas.Timedelta('6D'), last_date_with_data_for_all_regions),level='date').groupby('region').sum()
+    
+    return testcounts_in_last_daily_data/testcounts_in_last_daily_data['all']
 
 def download_rki_nowcast(run_date, target_filename) -> pathlib.Path:
     """ Downloads RKI nowcasting data unless [target_filename] already exists.
